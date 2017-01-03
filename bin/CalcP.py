@@ -44,11 +44,12 @@ def main(args):
     #NUM = ser.shape[1]
     jtk = pd.read_table(fn_jtk,index_col='ID')
 
-    
+    fn_jtk_core = fn_jtk.split('/')[-1] if '/' in fn_jtk else fn_jtk
+    fn_pkl_core = fn_pkl.split('/')[-1] if '/' in fn_pkl else fn_pkl
     if '.pkl' in fn_pkl:
         params,taus = pickle.load(open(fn_pkl,'rb'))
     else:
-        if 'boot' not in fn_pkl:
+        if 'boot' not in fn_pkl_core:
             taus = pd.read_table(fn_pkl)['Tau']
 
             keys,intvalues,yerr,p0,limit = prepare(taus)            
@@ -62,22 +63,37 @@ def main(args):
     params = p0
     gd = ss.gamma(params[0],params[1],params[2])
 
-    if 'boot' not in fn_jtk:
+
+    if 'boot' not in fn_jtk_core:
         keys = jtk['Tau']
     else:
         keys = jtk['TauMean']
-    print p0
+    #print p0
+    keys = list(keys)
+    #if 'TauMean' in keys:
+        #print keys.index('TauMean')
+        #print 
+    keys = np.array(list(keys),dtype=float)
 
-    
     empPs = empP(keys,taus)
-    jtk['empP']=empPs
+    jtk.loc[:,'empP']=empPs
 
+    if 'BF' in jtk.columns:
+        empPs = jtk[['BF','empP']].apply(min,axis=1)
+    jtk.loc[:,'empP']=empPs    
+        
     ps = gd.sf(keys)
     jtk['GammaP'] = ps
+
+
+    ps = jtk[['empP','GammaP']].apply(min,axis=1)
+    jtk.loc[:,'GammaP']=ps
+
+    
     jtk['GammaBH'] = list(ssm.multipletests(ps,method='fdr_bh')[1])
     
     fn_out = fn_jtk.replace('.txt','_GammaP.txt')
-    jtk.to_csv(fn_out,sep='\t')
+    jtk.to_csv(fn_out,sep='\t',na_rep=np.nan)
 
     
 def empP(taus,emps):

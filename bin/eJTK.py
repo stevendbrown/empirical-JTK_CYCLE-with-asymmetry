@@ -21,8 +21,11 @@ import numpy as np
 import argparse
 import os.path
 
-
-from accessories import get_waveform_list as a_get_waveform_list
+try:
+    from accessories import get_waveform_list as a_get_waveform_list
+except ImportError:
+    print 'Did you run python setup.py build_ext --inplace in the bin directory?'
+    raise
 from accessories import make_references as a_make_references
 from accessories import kt ### this is kendall tau
 from accessories import get_matches as a_get_matches
@@ -58,29 +61,39 @@ def main(args):
     header,series   = read_in(fn)
     #header,series = organize_data(header,data)
     out_lines = [[]]*len(series)
+    #print periods
+    #print phases
+    #print widths
+    ##### Here we insert some code to allow for a speedup if full set of phases and asymmetries are used
+    #if len(phases)==len(widths)+1:
+    #if 
     
     triples = a_get_waveform_list(periods,phases,widths)
-    new_header = [float(x[2:]) for x in header]
-    dref = a_make_references(new_header,triples,waveform)
+    #print triples
     
+    
+    new_header = [float(x[2:]) if 'ZT' in x or 'CT' in x else float(x) for x in header]
+    
+    dref = a_make_references(new_header,triples,waveform)
+
     for i,serie in enumerate(series):
-        if [s for s in serie[1:] if s!="NA"]==[]:
-            name = [serie[0]]+["All_NA"]+[-10000]*10+[np.nan,np.nan]
+        if np.nanstd([float(s) for s in serie[1:]])==0:
+            name = [serie[0]]+["All_NA"]+[-10000]*12+[np.nan,np.nan,np.nan]
         else:
             mmax,mmaxloc,mmin,mminloc,MAX_AMP=series_char(serie,header)
             sIQR_FC = IQR_FC(serie)
             smean   = series_mean(serie)
             sstd    = series_std(serie)
             sFC     = FC(serie)
-        
-        best = a_get_best_match(serie,waveform,triples,dref,new_header)
-        geneID,waveform,period,phase,nadir,maxloc,minloc,tau,p = best
-        out_line =     [geneID,waveform,period,phase,nadir,smean,sstd,maxloc,minloc,mmax,mmaxloc,mmin,mminloc,MAX_AMP,sFC,sIQR_FC,tau,p]
-        out_line =     [str(l) for l in out_line]
-        out_lines[i] = out_line
+            best = a_get_best_match(serie,waveform,triples,dref,new_header)
+            geneID,waveform,period,phase,nadir,maxloc,minloc,tau,p = best
+            out_line =     [geneID,waveform,period,phase,nadir,smean,sstd,maxloc,minloc,mmax,mmin,MAX_AMP,sFC,sIQR_FC,tau,p,p*len(triples)]
+
+            out_line =     [str(l) for l in out_line]
+            out_lines[i] = out_line
 
     with open(fn_out,'w') as g:
-        g.write("ID\tWaveform\tPeriod\tPhase\tNadir\tMean\tStd_Dev\tMaxLoc\tMinLoc\tMax\tMaxLoc\tMin\tMinLoc\tMax_Amp\tFC\tIQR_FC\tTau\tP\n")
+        g.write("ID\tWaveform\tPeriod\tPhase\tNadir\tMean\tStd_Dev\tMaxLoc\tMinLoc\tMax\tMin\tMax_Amp\tFC\tIQR_FC\tTau\tP\tBF\n")
         for out_line in out_lines:
             g.write("\t".join(out_line)+"\n")
 
@@ -120,7 +133,7 @@ def set_fn_out(fn,prefix,fn_out):
     def f_add_on(fn_out):
         add_on = 1
         while os.path.isfile(fn_out):
-            print fn_out, "already exists, take evasive action!!!"
+            print fn_out, "already exists, appending counter to filename!!!"
             endstr = '.'+fn_out.split('.')[-1]
             mid = '_'+str(add_on)+endstr
             if add_on ==1:
@@ -165,12 +178,12 @@ def read_in(fn):
         for line in f:
             words = line.strip().split()
             words = [word.strip() for word in words]
-            if words[0] == "#":
+            if words[0] == "#" or words[0]=='ID':
                 start_right = 1
                 header = words[1:]
             else:
                 if start_right == 0:
-                    print "Please enter file with header starting with #"
+                    print "Please enter file with header starting with # or ID"
                 elif start_right == 1:
                     data.append(words)
     return header, data
